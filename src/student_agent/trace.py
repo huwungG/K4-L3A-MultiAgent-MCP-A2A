@@ -16,6 +16,20 @@ class TraceWriter:
         self.path = path
         self.contracts = contracts
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._buffer: list[dict[str, Any]] | None = None
+
+    def begin_case(self) -> None:
+        """Buffer events so a case retried after a transport failure is traced once."""
+        self._buffer = []
+
+    def commit_case(self) -> None:
+        events, self._buffer = self._buffer or [], None
+        with self.path.open("a", encoding="utf-8") as handle:
+            for event in events:
+                handle.write(json.dumps(event, ensure_ascii=False, separators=(",", ":")) + "\n")
+
+    def discard_case(self) -> None:
+        self._buffer = None
 
     def emit(
         self,
@@ -46,6 +60,9 @@ class TraceWriter:
         }
         event.update({key: value for key, value in optional.items() if value is not None})
         self.contracts.validate_trace(event, "trace event")
+        if self._buffer is not None:
+            self._buffer.append(event)
+            return event
         with self.path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(event, ensure_ascii=False, separators=(",", ":")) + "\n")
         return event
